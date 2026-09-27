@@ -2,3 +2,4 @@ streamlit
 python-dotenv
 hindsight-client
 groq
+nest_asyncio

@@ -1,4 +1,13 @@
 import os
+import nest_asyncio
+import streamlit as st
+from dotenv import load_dotenv
+from hindsight_client import Hindsight
+from groq import Groq
+
+nest_asyncio.apply()
+
+load_dotenv()
 import streamlit as st
 from dotenv import load_dotenv
 from hindsight_client import Hindsight
