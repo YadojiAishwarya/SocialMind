@@ -1,39 +1,22 @@
 import os
-import nest_asyncio
 import streamlit as st
 from dotenv import load_dotenv
 from hindsight_client import Hindsight
 from groq import Groq
 
-nest_asyncio.apply()
+# --------------------------------------------------
+# Fix asyncio event-loop issue in Streamlit
+# -----------------------------------------------
+
+# --------------------------------------------------
+# Load environment variables
+# --------------------------------------------------
 
 load_dotenv()
-import streamlit as st
-from dotenv import load_dotenv
-from hindsight_client import Hindsight
-from groq import Groq
 
-load_dotenv()
-
-# Connect to Hindsight
-hindsight = Hindsight(
-    base_url=os.getenv("HINDSIGHT_BASE_URL"),
-    api_key=os.getenv("HINDSIGHT_API_KEY")
-)
-
-# Connect to Groq
-groq = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
-)
-
-bank_id = "socialmind-demo"
-if "post_count" not in st.session_state:
-    st.session_state.post_count = 3
-
-
-# -----------------------------
-# Page setup
-# -----------------------------
+# --------------------------------------------------
+# Page configuration
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="SocialMind",
@@ -41,40 +24,68 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧠 SocialMind")
-st.subheader("An AI Social Media Agent That Learns From Your Audience")
+# --------------------------------------------------
+# Connect to Hindsight
+# --------------------------------------------------
 
-st.caption(
-    "Powered by Hindsight memory + AI"
+hindsight = Hindsight(
+    base_url=os.getenv("HINDSIGHT_BASE_URL"),
+    api_key=os.getenv("HINDSIGHT_API_KEY")
 )
+
+# --------------------------------------------------
+# Connect to Groq
+# --------------------------------------------------
+
+groq = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
+)
+
+# --------------------------------------------------
+# Hindsight memory bank
+# --------------------------------------------------
+
+bank_id = "socialmind-demo"
+
+# --------------------------------------------------
+# Header
+# --------------------------------------------------
+
+st.title("🧠 SocialMind")
+
+st.subheader(
+    "An AI Social Media Agent That Learns From Your Audience"
+)
+
+st.caption("Powered by Hindsight memory + AI")
+
 st.write(
-    "SocialMind remembers your past posts and learns what your audience responds to."
+    "SocialMind remembers your past posts and audience responses "
+    "and uses that memory to make better future recommendations."
 )
 
 st.divider()
 
-
-# -----------------------------
+# --------------------------------------------------
 # Dashboard
-# -----------------------------
+# --------------------------------------------------
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Posts Remembered", "5")
+    st.metric("Posts Remembered", "5+")
+
 with col2:
     st.metric("Memory System", "Hindsight")
 
 with col3:
     st.metric("AI Model", "Groq")
 
-
 st.divider()
 
-
-# -----------------------------
-# Ask SocialMind
-# -----------------------------
+# ==================================================
+# ASK SOCIALMIND
+# ==================================================
 
 st.header("💬 Ask SocialMind")
 
@@ -85,167 +96,342 @@ question = st.text_input(
 
 if st.button("🚀 Ask SocialMind"):
 
-    if not question:
+    if not question.strip():
+
         st.warning("Please enter a question.")
 
     else:
-        with st.spinner("🧠 Searching SocialMind's memory..."):
 
-            result = hindsight.recall(
-                bank_id=bank_id,
-                query=question
-            )
+        try:
 
-            memories = "\n".join(
-                memory.text for memory in result.results
-            )
+            # ------------------------------------------
+            # Retrieve relevant memories
+            # ------------------------------------------
 
-        with st.spinner("🤖 Creating recommendation..."):
+            with st.spinner(
+                "🧠 Searching SocialMind's memory..."
+            ):
 
-            response = groq.chat.completions.create(
-              model="openai/gpt-oss-120b",  
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """
+                result = hindsight.recall(
+                    bank_id=bank_id,
+                    query=question
+                )
+
+                memories = "\n".join(
+                    memory.text
+                    for memory in result.results
+                )
+
+            if not memories:
+
+                memories = (
+                    "No relevant memories were found. "
+                    "Give a general recommendation and clearly "
+                    "state that there is not enough historical data."
+                )
+
+            # ------------------------------------------
+            # Ask AI to reason over memory
+            # ------------------------------------------
+
+            with st.spinner(
+                "🤖 Creating recommendation..."
+            ):
+
+                response = groq.chat.completions.create(
+                    model="openai/gpt-oss-120b",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """
 You are SocialMind, an AI social-media strategist.
 
-Use ONLY the memories provided to you.
+You help a brand understand what content works for its
+specific audience.
 
-Analyze the previous social-media performance and identify useful patterns.
+Use the memories provided to you as the primary source
+of historical information.
 
-Then give a practical recommendation for the user's question.
+Identify patterns in:
+- topics
+- formats
+- audience engagement
+- successful posts
+
+Then provide a practical recommendation.
+
+Do not invent historical performance data.
 
 Be concise, clear, and useful.
 """
-                    },
-                    {
-                        "role": "user",
-                        "content": f"""
-Question:
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""
+User question:
 
 {question}
 
-Memories from previous social-media activity:
+Historical memories from Hindsight:
 
 {memories}
 
 Based on these memories, answer the user's question.
+
+Give:
+1. What appears to work
+2. What should be posted next
+3. One concrete example
 """
-                    }
-                ]
+                        }
+                    ]
+                )
+
+                recommendation = (
+                    response.choices[0].message.content
+                )
+
+            # ------------------------------------------
+            # Display result
+            # ------------------------------------------
+
+            st.success(
+                "✅ SocialMind used its memory to answer."
             )
 
-            recommendation = response.choices[0].message.content
+            st.subheader("🤖 Recommendation")
 
-        st.success("✅ SocialMind has learned from its memory!")
+            st.write(recommendation)
 
-        st.subheader("🤖 Recommendation")
+            # ------------------------------------------
+            # Show memory used
+            # ------------------------------------------
 
-        st.write(recommendation)
+            with st.expander(
+                "🧠 Memories used by SocialMind"
+            ):
 
-        with st.expander("🧠 Memories used by SocialMind"):
-            st.write(memories)
+                st.write(memories)
 
+        except Exception as e:
+
+            st.error(
+                "Something went wrong while asking SocialMind."
+            )
+
+            st.code(str(e))
 
 st.divider()
+
+# ==================================================
+# LEARNING
+# ==================================================
 
 st.header("📈 Learning")
 
 st.write(
-    "SocialMind improves its recommendations by remembering previous "
+    "SocialMind improves over time by remembering previous "
     "posts and their audience responses."
 )
+
+st.info(
+    "The more performance data you teach SocialMind, "
+    "the more context Hindsight can provide for future recommendations."
+)
+
 st.divider()
+
+# ==================================================
+# TEACH SOCIALMIND
+# ==================================================
 
 st.header("🧠 Teach SocialMind")
 
-st.write("Add a new post result so SocialMind can learn from it.")
-
-new_post = st.text_input(
-    "Post",
-    placeholder="Example: 5 AI coding tools developers should try"
+st.write(
+    "Add a new post and its performance so SocialMind can learn from it."
 )
 
-col1, col2, col3 = st.columns(3)
+# Form prevents the page from rerunning while typing numbers
+with st.form("teach_socialmind_form"):
 
-with col1:
-    likes = st.number_input("Likes", min_value=0, value=0)
+    new_post = st.text_input(
+        "Post",
+        placeholder="Example: 5 AI coding tools developers should try"
+    )
 
-with col2:
-    comments = st.number_input("Comments", min_value=0, value=0)
+    col1, col2, col3 = st.columns(3)
 
-with col3:
-    shares = st.number_input("Shares", min_value=0, value=0)
+    with col1:
 
-if st.button("🧠 Remember This Post"):
+        likes = st.number_input(
+            "Likes",
+            min_value=0,
+            max_value=100000,
+            value=50000,
+            step=100
+        )
 
-    if new_post:
-        memory = f"""
+    with col2:
+
+        comments = st.number_input(
+            "Comments",
+            min_value=0,
+            max_value=10000,
+            value=300,
+            step=100
+        )
+
+    with col3:
+
+        shares = st.number_input(
+            "Shares",
+            min_value=0,
+            max_value=100000,
+            value=500,
+            step=10
+        )
+
+    remember = st.form_submit_button(
+        "🧠 Remember This Post"
+    )
+
+# --------------------------------------------------
+# Save new memory
+# --------------------------------------------------
+
+if remember:
+
+    if not new_post.strip():
+
+        st.warning(
+            "Please enter the post first."
+        )
+
+    else:
+
+        try:
+
+            memory = f"""
 Social media post:
 {new_post}
 
 Likes: {likes}
 Comments: {comments}
 Shares: {shares}
+
+This is historical audience performance data for SocialMind.
 """
 
-        hindsight.retain(
-            bank_id=bank_id,
-            content=memory
-        )
-        
+            hindsight.retain(
+                bank_id=bank_id,
+                content=memory
+            )
 
-        st.success("✅ SocialMind remembered this post!")
+            st.success(
+                "✅ SocialMind remembered this post!"
+            )
 
-    else:
-        st.warning("Please enter the post first.")
-        st.divider()
+            st.info(
+                "This performance data is now available "
+                "to Hindsight for future recommendations."
+            )
+
+        except Exception as e:
+
+            st.error(
+                "Could not save this post to Hindsight."
+            )
+
+            st.code(str(e))
+
+st.divider()
+
+# ==================================================
+# WHAT SOCIALMIND LEARNED
+# ==================================================
 
 st.header("🧠 What SocialMind Learned")
 
-st.success("Practical AI content performs well with this audience.")
-st.success("Developer-focused topics receive strong engagement.")
-st.success("List-style posts have performed well.")
+st.success(
+    "Practical AI content performs well with this audience."
+)
+
+st.success(
+    "Developer-focused topics receive strong engagement."
+)
+
+st.success(
+    "List-style posts have performed well."
+)
 
 st.info(
-    "📈 Recent high-performing post: "
-    "5 AI coding tools developers should try — 2,400 likes"
+    "📈 Recent high-performing example: "
+    "AI coding tools for developers"
 )
 
 st.divider()
+
+# ==================================================
+# BEST PERFORMING POSTS
+# ==================================================
 
 st.header("🏆 Best Performing Posts")
 
-best_posts = hindsight.recall(
-    bank_id=bank_id,
-    query="Which social media posts had the highest likes, comments, and shares?"
+st.write(
+    "Hindsight retrieves memories about posts and their audience performance."
 )
 
-if best_posts.results:
+try:
 
-    shown = set()
+    best_posts = hindsight.recall(
+        bank_id=bank_id,
+        query=(
+            "social media posts with high likes, "
+            "high comments, and high shares; "
+            "best performing posts"
+        )
+    )
 
-    for memory in best_posts.results:
+    if best_posts.results:
 
-        text = memory.text.strip()
+        shown = set()
 
-        if text not in shown:
-            st.write("📌", text)
-            shown.add(text)
+        for memory in best_posts.results:
 
-        if len(shown) == 3:
-            break
+            text = memory.text.strip()
 
-else:
-    st.write("No performance data found yet.")
+            if text and text not in shown:
+
+                st.write("📌", text)
+
+                shown.add(text)
+
+            if len(shown) >= 3:
+                break
+
+    else:
+
+        st.write(
+            "No performance data found yet."
+        )
+
+except Exception as e:
+
+    st.warning(
+        "Could not retrieve performance memories right now."
+    )
+
 st.divider()
+
+# ==================================================
+# BEFORE VS AFTER LEARNING
+# ==================================================
 
 st.header("🔄 Before vs After Learning")
 
 st.write(
-    "See how SocialMind's recommendation changes after learning "
-    "from your audience's previous performance."
+    "See how SocialMind changes from a generic AI answer "
+    "to a recommendation informed by audience memory."
 )
 
 if st.button("✨ Show Learning Improvement"):
@@ -259,17 +445,43 @@ if st.button("✨ Show Learning Improvement"):
     st.subheader("🧠 After Learning")
 
     st.write(
-        "Create a practical, developer-focused AI post, preferably "
-        "in a list format. Previous audience data shows that "
-        "practical AI and developer-focused content received strong "
-        "engagement."
+        "Create a practical, developer-focused AI post, "
+        "preferably in a list format. Historical audience "
+        "data shows that practical AI and developer-focused "
+        "content has received stronger engagement."
     )
 
     st.success(
-        "SocialMind changed from a generic suggestion to a "
-        "memory-informed recommendation."
-    ) 
+        "SocialMind changed from a generic suggestion "
+        "to a memory-informed recommendation."
+    )
 
+st.divider()
 
-    
+# ==================================================
+# HOW IT WORKS
+# ==================================================
 
+st.header("⚙️ How SocialMind Works")
+
+st.write(
+    """
+Past Posts + Engagement Data
+        ↓
+Hindsight Memory
+        ↓
+Relevant Memory Retrieval
+        ↓
+AI Reasoning with Groq
+        ↓
+Personalized Recommendation
+        ↓
+New Post Performance
+        ↓
+Hindsight Learns Again
+"""
+)
+
+st.caption(
+    "The key idea: SocialMind gets better because it remembers."
+)
